@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Duel Spirits</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="stage">
+    <div id="game"></div>
+    <div id="hud" hidden></div>
+    <div id="ui"><div class="loading" id="boot"><div class="l-text">Cargando...</div></div></div>
+  </div>
+  <div id="touch" hidden>
+    <div class="dpad">
+      <button data-btn="up" class="tb up">▲</button><button data-btn="left" class="tb left">◀</button>
+      <button data-btn="right" class="tb right">▶</button><button data-btn="down" class="tb down">▼</button>
+    </div>
+    <button data-btn="START" class="tb start">MENÚ</button>
+    <div class="ab"><button data-btn="B" class="tb b">B</button><button data-btn="A" class="tb a">A</button></div>
+  </div>
+  <script>
+    // Muestra en pantalla cualquier error de arranque (en vez de quedar en negro)
+    window.__bootErrors = [];
+    function bootError(msg) {
+      window.__bootErrors.push(msg);
+      var b = document.getElementById("boot"); if (!b) { b = document.createElement("div"); b.className = "loading"; b.id = "boot"; document.getElementById("ui").appendChild(b); }
+      b.innerHTML = '<div class="l-text err">El juego no pudo arrancar.<br><br>' + String(msg).replace(/[<>&]/g, "") + '<br><br>Sacale una captura a esta pantalla y mandásela a Claude.</div>';
+    }
+    addEventListener("error", function (e) { if (window.__ready) return; if (e.target && e.target.tagName && e.target.tagName !== "SCRIPT") return; bootError((e.message || "Error") + (e.filename ? " (" + e.filename.split("/").slice(-2).join("/") + ":" + e.lineno + ")" : "") + (e.target && e.target.src ? " al cargar " + e.target.src : "")); }, true);
+    addEventListener("unhandledrejection", function (e) { if (window.__ready) return; bootError(e.reason && e.reason.message ? e.reason.message : String(e.reason)); });
+    setTimeout(function () { if (!window.__booted && !window.__bootErrors.length) bootError("Tiempo de espera agotado: el código del juego no se ejecutó. Si abriste el juego con otro servidor, usá JUGAR (Windows).bat."); }, 15000);
+  </script>
+  <script src="lib/phaser.min.js"></script>
+  <script>
+    // Escenario 16:9 que ocupa el máximo espacio; las unidades de la interfaz escalan con él.
+    function fit() {
+      const s = document.getElementById("stage"); const touch = !document.getElementById("touch").hidden;
+      const vw = innerWidth, vh = innerHeight - (touch && innerHeight > innerWidth ? 200 : 0);
+      let w = vw, h = vw * 9 / 16; if (h > vh) { h = vh; w = h * 16 / 9; }
+      s.style.width = w + "px"; s.style.height = h + "px";
+      document.documentElement.style.setProperty("--px", (h / 160) + "px");
+      document.documentElement.style.setProperty("--u", (w / 480) + "px");
+    }
+    addEventListener("resize", fit); new MutationObserver(fit).observe(document.getElementById("touch"), { attributes: true }); fit();
+  </script>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
