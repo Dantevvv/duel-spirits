@@ -59,10 +59,10 @@ export async function runDuel(ctx, opts) {
   const finalLP = result.lp[me];
 
   // Pantalla de resultado
-  const rewards = won && !error ? victoryRewards(st, opts, (name) => ctx.idsOf([[name, 1]])[0]) : { cards: [], money: [], notices: [] };
-  const rows = error ? [] : [...moneyBreakdown(opts, result, me, runner.achievements.players[me]), ...rewards.money];
+  const rewards = won && !error && !opts.noRewards ? victoryRewards(st, opts, (name) => ctx.idsOf([[name, 1]])[0]) : { cards: [], money: [], notices: [] };
+  const rows = error || opts.noRewards ? [] : [...moneyBreakdown(opts, result, me, runner.achievements.players[me]), ...rewards.money];
   const money = rows.reduce((sum, row) => sum + row.amount, 0);
-  if (!error) {
+  if (!error && !opts.noRewards) {
     if (won) { st.stats.wins++; st.money += money; }
     else if (result.winner === 1 - me) st.stats.losses++;
     if (st.options.persistentLP) st.lp = won ? Math.min(maxLP, Math.max(1, finalLP)) : 0;

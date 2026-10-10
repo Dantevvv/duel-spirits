@@ -4,7 +4,7 @@ import { UI, el, esc, sleep } from "./ui/ui.js";
 import { game, hasSave, load, wipe, flag, setFlag, addCard, fmt, save } from "./state.js";
 import { WorldScene } from "./world/world.js";
 import { SCRIPTS } from "./content/story.js";
-import { STARTERS } from "./content/decks.js";
+import { STARTERS, STARTER_ORDER } from "./content/decks.js";
 import { OcgCore } from "./engine/core.js";
 import { CardDB } from "./duel/cards.js";
 import { runDuel } from "./duel/session.js";
@@ -12,7 +12,8 @@ import { startMenu, deckEditor, showStarter, hideStarter, setMenuCards } from ".
 import { ART } from "./duel/duelview.js";
 import { Sfx } from "./sfx.js";
 import { cardShop } from "./ui/shop.js";
-import { updateUntouchedStarter } from "./content/starter-update.js";
+import { updateUntouchedStarter, migrateSave } from "./content/starter-update.js";
+import { giveStarterKeys } from "./duel/rewards.js";
 
 const ctx = {};
 
@@ -28,7 +29,8 @@ async function loadAll(progress) {
   ctx.core = core; ctx.cards = new CardDB(cards); ctx.strings = strings; ctx.bundle = scripts; ctx.extraScripts = {};
   ctx.cards.setSpanish(cardsEs, () => game.state.options.cardLang);
   core.onLog = (t, m) => { if (t === 0) console.warn("[motor]", m); };
-  ctx.byName = {}; for (const k in cards) { const n = cards[k][9]; if (!(n in ctx.byName)) ctx.byName[n] = Number(k); }
+  // Nombre → id canónico (alias 0): una ilustración alternativa no es la carta del pool.
+  ctx.byName = {}; for (const k in cards) { const n = cards[k][9]; if (!(n in ctx.byName) || cards[k][0] === 0) ctx.byName[n] = Number(k); }
   ctx.scripts = (name) => ctx.bundle[name] ?? ctx.extraScripts[name] ?? null;
   // Scripts de cartas fuera del paquete: se piden a data/scripts/ antes de cada duelo (si existen)
   ctx.preload = async (ids) => {
@@ -83,8 +85,10 @@ function makeApi(world) {
     giveStarter(key) {
       const s = STARTERS[key];
       game.state.deck = { main: ctx.idsOf(s.main), extra: ctx.idsOf(s.extra) };
-      game.state.starterRevision = 2;
+      game.state.starterRevision = 3;
     },
+    giveStarterKeys: (stage) => giveStarterKeys(game.state, stage, ctx.idOf),
+    cardNames: (ids) => ids.map((id) => ctx.cards.get(id).name),
     giveCard: (name, n = 1) => addCard(ctx.idOf(name), n),
     cardName: (name) => ctx.cards.get(ctx.idOf(name)).name, // nombre en el idioma elegido
     weighted(list) { const tot = list.reduce((s, [, w]) => s + w, 0); let r = Math.random() * tot; for (const [n, w] of list) { r -= w; if (r <= 0) return n; } return list[0][0]; },
@@ -105,7 +109,7 @@ function makeApi(world) {
     hideStarter,
     refresh: () => world.refreshDecos(),
     openDeckEditor: () => deckEditor(),
-    openCardShop: () => cardShop(ctx),
+    openCardShop: (shopId) => cardShop(ctx, shopId),
   };
   return api;
 }
@@ -156,8 +160,18 @@ async function boot() {
   if (choice === "dev") {
     wipe(); const st = game.state; st.player = "Ren"; st.rival = "Leo";
     if (dev === "shop") { st.flags.canChoose = true; world.loadMap("shop", 7, 4, "up"); }
-    else { st.flags = { hasDeck: true, rivalLeftShop: true, taken_kuriboh: true, taken_timewizard: true }; st.starter = "kuriboh"; world.api.giveStarter("kuriboh"); st.heal = { map: "shop", x: 7, y: 4, dir: "up" }; world.loadMap(dev === "town" ? "town" : "route1", dev === "leaders" ? 9 : 10, dev === "town" ? 8 : dev === "leaders" ? 6 : 31, dev === "leaders" ? "left" : "up"); }
+    else {
+      // ?dev=town | route1 | verde | gym | yugi. &starter=gigobyte|timewizard cambia la inicial (por defecto Kuriboh).
+      const starter = new URLSearchParams(location.search).get("starter") || "kuriboh";
+      const rivalStarter = STARTER_ORDER.find((k) => STARTERS[k].beats === starter);
+      st.flags = { hasDeck: true, rivalLeftShop: true, beat_rival: true, rivalStarter, ["taken_" + starter]: true, ["taken_" + rivalStarter]: true };
+      st.starter = starter; world.api.giveStarter(starter); st.heal = { map: "shop", x: 7, y: 4, dir: "up" };
+      if (dev === "verde" || dev === "gym") { st.flags.met_rival_verde = true; giveStarterKeys(st, 1, ctx.idOf); }
+      const spot = { town: ["town", 10, 8, "up"], yugi: ["town", 12, 9, "right"], verde: ["verde", 10, 18, "up"], gym: ["gym_verde", 5, 11, "up"], leaders: ["gym_verde", 5, 11, "up"] }[dev] || ["route1", 10, 31, "up"];
+      world.loadMap(...spot);
+    }
   } else if (choice === "cont" && load()) {
+    migrateSave(game.state);
     if (updateUntouchedStarter(game.state, ctx.idsOf, ctx.idOf)) { save(); UI.toast("Tu mazo inicial recibió el ajuste de balance."); }
     world.loadMap(game.state.map, game.state.x, game.state.y, game.state.dir);
   } else {

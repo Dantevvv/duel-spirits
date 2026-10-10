@@ -21,6 +21,8 @@ export class WorldScene extends Phaser.Scene {
     buildTextures(this);
     buildBuilding(this, "b_house", 5, 4, { roof: "#d0504a", roofB: "#b03a36", roofC: "#e0706a", door: 2, windows: [0.4, 3.6], chimney: true });
     buildBuilding(this, "b_house2", 5, 4, { roof: "#4a7ad0", roofB: "#3a5ab0", roofC: "#6a9ae0", door: 2, windows: [0.4, 3.6], chimney: true });
+    buildBuilding(this, "b_house3", 5, 4, { roof: "#58a058", roofB: "#3e7e3e", roofC: "#78c078", door: 2, windows: [0.4, 3.6], chimney: true });
+    buildBuilding(this, "b_gym", 7, 5, { roof: "#4a9a5a", roofB: "#2e7a40", roofC: "#6aba7a", door: 3, windows: [0.6, 5.4], sign: "GIMNASIO", signColor: "#2e7a40" });
     buildBuilding(this, "b_shop", 7, 5, { roof: "#e0a040", roofB: "#c08020", roofC: "#f0c060", door: 2, windows: [4, 5.4], sign: "TIENDA", signColor: "#7a3ab0" });
     this.layer = this.add.container(0, 0); this.objLayer = this.add.container(0, 0);
     this.cameras.main.setZoom(S);

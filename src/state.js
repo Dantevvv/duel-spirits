@@ -26,6 +26,7 @@ export function newState() {
     spiritsBeaten: {},        // id espíritu -> victorias
     leadersBeaten: {},        // líderes disponibles para revanchas y sobres
     locators: [],
+    keyStage: 0,              // etapas de cartas clave de la inicial ya entregadas (D-40)
     stats: { wins: 0, losses: 0, steps: 0 },
     options: { ...DEFAULT_OPTIONS },
     playTime: 0,

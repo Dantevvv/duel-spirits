@@ -1,9 +1,19 @@
 // Scripts de historia. Cada script es una función async que recibe "g" (la API del juego).
 // Para seguir la historia, agregá funciones acá y referencialas desde maps.js (npcs, objetos, disparadores).
-import { STARTERS, STARTER_ORDER, TRAINER_DECKS } from "./decks.js";
+import { STARTERS, STARTER_ORDER, STARTER_KEYS } from "./decks.js";
 import { SPIRITS } from "./spirits.js";
 import { RIVALS } from "./rivals.js";
-import { ROUTE_LEADERS } from "./packs.js";
+import { GYM_DUELISTS } from "./packs.js";
+import { PLAN, GYMS, deckFor } from "./progression.js";
+
+// Diálogos de los entrenadores de ruta. La baraja, los LP, la IA y el premio están en progression.js.
+const TRAINER_LINES = {
+  route1_bug: { flag: "beat_bugkid", hi: "¡Ey, vos! ¡Los insectos son las mejores cartas que existen!\n\n¡Te lo voy a demostrar!", win: "¡Nooo! Mis pobres bichitos...", after: "Voy a atrapar más bichos para mi baraja. ¡La próxima te gano!" },
+  route1_rock: { flag: "beat_route1_rock", hi: "¡Alto, duelista! Mis rocas aguantan cualquier ataque.\n\nA ver si podés con una muralla de piedra.", win: "¡Imposible! ¡Rompiste mi muralla!", after: "Con Gaia Power mis rocas golpean más fuerte. Igual me ganaste... Respeto." },
+  route1_sword: { flag: "beat_route1_sword", hi: "¡En guardia! Un espadachín nunca rechaza un duelo.", win: "Mi espada... no fue suficiente.", after: "Reforzá tu baraja con trampas. Los guerreros atacan sin parar." },
+  route1_zombie: { flag: "beat_route1_zombie", hi: "Los muertos no descansan en esta ruta...\n\nMis zombis vuelven una y otra vez.", win: "Volverán... siempre vuelven...", after: "Si vas al gimnasio, Weevil juega sucio. Cuidado con sus trampas." },
+  route1_chumley: { flag: "beat_route1_chumley", hi: "¡Uf, uf! ¿Vas a Ciudad Verde? Primero tenés que pasar por mí.\n\n¡Mis koalas son imparables!", win: "¡Ay, no! Y yo que quería impresionar a todos...", after: "Ciudad Verde está acá nomás. ¡El gimnasio es el edificio verde grande!" },
+};
 
 const TEO = "Don Teo";
 
@@ -116,14 +126,16 @@ export const SCRIPTS = {
     await g.say("Escuchá bien, {PLAYER}. En el torneo, tus Puntos de Vida no se recuperan solos entre duelo y duelo.\n\nSi bajan mucho, volvé a la tienda o a tu casa y te los restauro.", TEO);
     await g.say("Los espíritus de la hierba alta te van a desafiar. Si les ganás, se unen a vos como cartas.\n\nY cada vez que les vuelvas a ganar, te van a dar cartas parecidas a ellos.", TEO);
     await g.say("Con START (tecla Esc o M) abrís el menú: ahí podés armar tu baraja con las cartas nuevas.\n\n¡Andá, {PLAYER}! ¡Ciudad Verde queda al norte, pasando la Ruta 1!", TEO);
+    await g.say("Ah, y una cosa más: tu baraja todavía no tiene todas sus cartas. Las mejores te las voy a ir mandando a medida que avances.\n\nTambién vendo sobres acá, cuando quieras.", TEO);
     g.setHeal("shop", 7, 4, "up");
   },
 
   async teo(g) {
     if (!g.flag("canChoose") && !g.flag("hasDeck")) return g.say("¡Hola, {PLAYER}!", TEO);
     if (!g.flag("hasDeck")) return g.say("Elegí una de las barajas de la mesa. ¡Tomate tu tiempo!", TEO);
-    const r = await g.ask("¿Querés que restaure tus Puntos de Vida?", ["Sí", "No"], TEO);
+    const r = await g.ask("¿Qué necesitás?", ["Restaurar LP", "Comprar sobres", "Nada"], TEO);
     if (r === 0) { await g.heal(true); await g.say("¡Listo! Tus LP están al máximo. ¡Volvé cuando quieras!", TEO); g.setHeal("shop", 7, 4, "up"); }
+    else if (r === 1) await g.openCardShop("teo");
     else await g.say("¡Buena suerte allá afuera!", TEO);
   },
   async rival_shop(g) {
@@ -132,31 +144,97 @@ export const SCRIPTS = {
   },
 
   // ---------------- Ruta 1 ----------------
-  async bugkid(g) {
-    if (g.flag("beat_bugkid")) return g.say("Voy a atrapar más bichos para mi baraja. ¡La próxima te gano!", "Cazabichos Tomás");
-    await g.say("¡Ey, vos! ¡Los insectos son las mejores cartas que existen!\n\n¡Te lo voy a demostrar!", "Cazabichos Tomás");
-    const r = await g.duel({ kind: "trainer", name: "Cazabichos Tomás", sprite: "bugkid", deck: TRAINER_DECKS.route1_bug, lp: 8000, money: 120, skill: 0.5, unlockFlag: "beat_bugkid" });
-    if (r.won) { g.setFlag("beat_bugkid"); await g.say("¡Nooo! Mis pobres bichitos...", "Cazabichos Tomás"); }
-  },
-  async worker(g) { await g.say("Más adelante está Ciudad Verde, pero el puente está en obras.\n\n¡Volvé más tarde!", "Obrero"); },
-  async route1_blocked(g) {
-    await g.say("¡Alto ahí! El puente a Ciudad Verde está en obras.", "Obrero");
-    await g.say("Weevil, Rex y Mako están entrenando acá. Podés desafiarlos las veces que quieras, en cualquier orden. El vendedor tiene sobres y suma los de cada duelista que derrotes.");
-    await g.move("player", ["down"]);
+  // Entrenadores con línea de visión: te ven, se acercan y te desafían una vez.
+  async trainer(g, id) {
+    const step = PLAN[id], lines = TRAINER_LINES[id];
+    if (!step || !lines) return;
+    if (g.flag(lines.flag)) return g.say(lines.after, step.name);
+    if (!g.flag("hasDeck")) return;
+    await g.say(lines.hi, step.name);
+    const r = await g.duel({ kind: "trainer", name: step.name, deck: deckFor(step), lp: step.lp ?? 8000, money: step.money, skill: step.skill, unlockFlag: lines.flag });
+    if (r.won) { g.setFlag(lines.flag); await g.say(lines.win, step.name); }
   },
 
-  async route_leader(g, id) {
-    const leader = ROUTE_LEADERS[id], rival = RIVALS[id];
-    if (!leader || !g.flag("hasDeck")) return;
+  // ---------------- Ciudad Verde ----------------
+  // El rival te espera en la entrada (D-40): duelo con su baraja reforzada y el paquete de Don Teo.
+  async rival_verde(g) {
+    g.setFlag("met_rival_verde");
+    await g.say("¡{PLAYER}! ¡Por fin llegás!", "{RIVAL}");
+    const p = g.pos("player");
+    g.spawn({ id: "rival_v", sprite: "rival", x: p.x, y: p.y - 4, dir: "down" });
+    await g.move("rival_v", ["down", "down", "down"]);
+    g.face("player", "up");
+    await g.say("El abuelo me mandó a darte esto. Pero primero... ¡duelo! Quiero ver cuánto mejoraste.", "{RIVAL}");
+    const step = PLAN.rival_verde, rkey = g.state.flags.rivalStarter;
+    let r;
+    do {
+      r = await g.duel({ kind: "rival", name: "{RIVAL}", sprite: "rival", deck: deckFor(step, rkey), lp: 8000, money: step.money, skill: step.skill });
+      if (r.error && await g.ask("El duelo se interrumpió. ¿Querés reintentarlo?", ["Reintentar", "Seguir sin premio"]) !== 0) break;
+    } while (r.error);
+    if (r.won) await g.say("¡Grrr! ¡Las cartas nuevas del abuelo me salieron bien a mí también, eh!", "{RIVAL}");
+    else if (!r.error) await g.say("¡Ja! Sigo un paso adelante.", "{RIVAL}");
+    await g.say("Bueno, tomá. El abuelo dice que tu baraja está lista para crecer.", "{RIVAL}");
+    const ids = g.giveStarterKeys(1);
+    if (ids.length) {
+      await g.say(`¡{PLAYER} recibió el paquete "${STARTER_KEYS[g.state.starter][0].title}"!\n\n${g.cardNames(ids).join(" · ")}`);
+      await g.say("Las cartas nuevas están en tu colección. Sumalas desde Baraja en el menú.");
+    }
+    await g.say("¡Voy a ser el primero en ganarle a Weevil! ¡Nos vemos!", "{RIVAL}");
+    await g.move("rival_v", ["up", "up", "up", "up", "up"]);
+    g.remove("rival_v");
+  },
+  async verde_kid(g) { await g.say("¡En el gimnasio hay tres duelistas! Dicen que Weevil no acepta desafíos hasta que les ganes a los otros dos.", "Nena"); },
+  async verde_old(g) {
+    await g.say("Los sobres de acá traen cartas de Spell Ruler y Pharaoh's Servant.", "Abuelo");
+    await g.say("Las cartas más poderosas no salen en los sobres hasta que juntes Tarjetas Localizadoras. Así es el torneo de Kaiba.", "Abuelo");
+  },
+  async verde_fan(g) { await g.say("Weevil siempre esconde algo boca abajo. Antes de atacar con todo, pensá qué puede ser.", "Fan de los duelos"); },
+  async verde_clerk(g) {
+    const r = await g.ask("¡Bienvenido al Centro de Duelos! ¿Querés descansar y recuperar tus Puntos de Vida?", ["Sí", "No"], "Recepcionista");
+    if (r === 0) { await g.heal(true); g.setHeal("verdeshop", 3, 3, "up"); await g.say("¡Listo! Te esperamos cuando quieras.", "Recepcionista"); }
+    else await g.say("¡Mucha suerte en el torneo!", "Recepcionista");
+  },
+
+  // ---------------- Gimnasio de Ciudad Verde (D-39) ----------------
+  // Rex y Mako te ven al pasar; Weevil, el líder, solo acepta el duelo después de que les ganes a los dos.
+  // Se los puede volver a desafiar las veces que quieras (como en D-31): cada revancha da una carta de su mazo.
+  async gym_duelist(g, id) {
+    const d = GYM_DUELISTS[id], r = RIVALS[id], step = PLAN["gym_" + id], gym = GYMS.verde;
+    if (!d || !g.flag("hasDeck")) return;
     const wins = g.state.leadersBeaten[id] || 0;
-    const yes = await g.ask(`${leader.line}\nVictorias contra mí: ${wins}. Ganar te da una carta de mi baraja.`, ["¡Duelo!", "Ahora no"], rival.name);
+    if (id === gym.leader) {
+      const missing = gym.trainers.filter((t) => !g.state.leadersBeaten[t]);
+      if (missing.length) return g.say(`¿Querés enfrentarme a mí? Je. Primero ganale a ${missing.map((t) => RIVALS[t].name).join(" y a ")}.`, r.name);
+    }
+    if (!wins) await g.say(d.line, r.name);
+    const yes = await g.ask(wins ? `¿Revancha? Victorias contra mí: ${wins}. Ganar te da una carta de mi baraja.` : "¿Aceptás el duelo?", ["¡Duelo!", "Ahora no"], r.name);
     if (yes !== 0) return;
-    await g.duel({ kind: "leader", leader: id, name: rival.name, deck: rival.early, lp: 8000, money: leader.money, skill: 0.7 });
+    const res = await g.duel({ kind: "leader", leader: id, name: r.name, deck: deckFor(step), lp: step.lp ?? 8000, money: step.money, skill: step.skill });
+    if (res.won) g.setFlag("gym_" + id);
+    if (res.won && !wins && id === gym.leader) {
+      await g.say("¡No puede ser! ¡Mi enjambre...! Tomá, te la ganaste. Es tu primera Tarjeta Localizadora.", r.name);
+      await g.say("Ya podés comprar los sobres de Labyrinth of Nightmare en la tienda.\n\nY revisá tu colección: Don Teo te mandó más cartas clave.");
+    } else if (res.won && !wins) await g.say("Bien jugado... Weevil te espera al fondo.", r.name);
+  },
+  async gym_guide(g) {
+    await g.say("¡Hola, aspirante! Este gimnasio es de insectos, agua y dinosaurios.", "Guía");
+    await g.say("Tus Puntos de Vida no se recuperan entre duelo y duelo. Si estás bajo, salí y descansá en el Centro de Duelos, al lado de la tienda.", "Guía");
   },
 
+  // ---------------- Tiendas ----------------
   async card_shop(g) {
     if (!g.flag("hasDeck")) return;
-    await g.openCardShop();
+    await g.openCardShop("verde");
+  },
+
+  // ---------------- Playtest (D-42) ----------------
+  async test_yugi(g) {
+    await g.say("[PRUEBA] Yami Yugi con su baraja de la semifinal: Mago Oscuro y los tres Dioses Egipcios.\n\nNo da premios ni hace perder dinero.", "Playtest");
+    const step = PLAN.test_yugi;
+    if (await g.ask("¿Duelo de prueba contra Yami Yugi?", ["¡Duelo!", "Ahora no"], "Yami Yugi") !== 0) return;
+    const lp = g.state.lp;
+    await g.duel({ kind: "test", name: step.name, deck: deckFor(step), lp: 8000, money: 0, skill: step.skill, noBlackout: true, noRewards: true });
+    g.state.lp = lp; // la prueba no cuenta para los LP persistentes
   },
 
   // ---------------- Encuentros ----------------

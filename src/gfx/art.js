@@ -236,6 +236,16 @@ export const CHARACTERS = {
   worker: { skin: "#e0b080", hair: "#3a3a3a", hairStyle: "cap", cap: "#f6902a", capB: "#c86c10", shirt: "#f6902a", shirtB: "#c86c10", belt: "#3a3a3a", pants: "#3f5078", shoes: "#3a2a20" },
   oldman: { skin: "#eabb8a", hair: "#bbbbbb", hairStyle: "bald", beard: "#d8d8d8", shirt: "#94724e", shirtB: "#6e5030", pants: "#4c4c54", shoes: "#2a2a2a" },
   girl: { skin: "#f6c99a", hair: "#f2d264", hairStyle: "long", shirt: "#62c8a6", shirtB: "#40a080", dress: true, pants: "#f6c99a", shoes: "#c84a4a" },
+  // Figuras genéricas (D-12): solo colores, ningún diseño de la serie.
+  hiker: { skin: "#d8a070", hair: "#5a3a1a", hairStyle: "bandana", cap: "#8a5a2a", shirt: "#a0703a", shirtB: "#7a5028", belt: "#3a2a1a", pants: "#5a6a3a", shoes: "#3a2a20" },
+  swordsman: { skin: "#f0c090", hair: "#202838", hairStyle: "spiky", shirt: "#c8ccd8", shirtB: "#9aa0b4", belt: "#7a3a2a", pants: "#3a4060", shoes: "#2a2a2a" },
+  occultist: { skin: "#e8d0c0", hair: "#3a1a4a", hairStyle: "long", shirt: "#4a2a6a", shirtB: "#2e1a46", dress: true, pants: "#e8d0c0", shoes: "#1a1a22" },
+  chumley: { skin: "#f0c090", hair: "#7a5a3a", hairStyle: "spiky", shirt: "#e8c040", shirtB: "#c09a20", belt: "#3a3a3a", pants: "#3a3f54", shoes: "#5a3a2a" },
+  dinofan: { skin: "#e8b888", hair: "#a03a2a", hairStyle: "cap", cap: "#3a8a4a", capB: "#2a6a38", shirt: "#d05a3a", shirtB: "#a8402a", pants: "#3a3a48", shoes: "#2a2a2a" },
+  sailor: { skin: "#d89a68", hair: "#2a2a3a", hairStyle: "bandana", cap: "#3a6ad0", shirt: "#f0f0f0", shirtB: "#c0c6d6", belt: "#3a6ad0", pants: "#2a4a8a", shoes: "#2a2a2a" },
+  bugleader: { skin: "#f0d0b0", hair: "#3a6a3a", hairStyle: "spiky", glasses: "#2a2e3e", shirt: "#6aa040", shirtB: "#4a7a2a", belt: "#2a3a2a", pants: "#e8e0c8", shoes: "#3a3a2a" },
+  clerk: { skin: "#f6c99a", hair: "#e07090", hairStyle: "long", shirt: "#f4f4f8", shirtB: "#d0d4e0", dress: true, pants: "#f6c99a", shoes: "#e07090" },
+  duelist: { skin: "#f0c8a0", hair: "#2a2030", hairStyle: "spiky", shirt: "#2a2a3a", shirtB: "#1a1a26", belt: "#c8a040", pants: "#2a2a3a", shoes: "#1a1a1a" },
 };
 
 /** Registra todas las texturas en Phaser. */

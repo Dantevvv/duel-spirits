@@ -1,7 +1,22 @@
 import { OcgMessageType as M } from "../ocg/type_message.js";
 import { SPIRITS } from "../content/spirits.js";
 import { RIVALS } from "../content/rivals.js";
-import { ROUTE_LEADERS, shopPacks, openPack } from "../content/packs.js";
+import { GYM_DUELISTS, shopPacks, openPack } from "../content/packs.js";
+import { STARTER_KEYS } from "../content/decks.js";
+import { GYMS } from "../content/progression.js";
+
+const GYM_LEADERS = new Set(Object.values(GYMS).map((g) => g.leader));
+
+/** Entrega las cartas clave de una etapa de la inicial (D-40). Devuelve los ids, o [] si ya se entregó. */
+export function giveStarterKeys(st, stage, idOf) {
+  const keys = STARTER_KEYS[st.starter]; if (!keys || !keys[stage - 1]) return [];
+  st.keyStage = st.keyStage || 0; if (st.keyStage >= stage) return [];
+  const ids = [];
+  for (let s = st.keyStage; s < stage; s++) for (const [name, n] of keys[s].cards) for (let i = 0; i < n; i++) ids.push(idOf(name));
+  for (const id of ids) st.collection[id] = (st.collection[id] || 0) + 1;
+  st.keyStage = stage;
+  return ids;
+}
 
 export class DuelAchievements {
   constructor(cards) { this.cards = cards; this.reset(); }
@@ -69,17 +84,23 @@ export function victoryRewards(st, opts, idOf, random = Math.random) {
     Object.assign(reward, giveDrop(st, spiritPool(sp), idOf, random, first ? sp.card : null));
     st.spiritsBeaten[opts.spirit] = (st.spiritsBeaten[opts.spirit] || 0) + 1;
   }
-  if (opts.leader && ROUTE_LEADERS[opts.leader]) {
+  if (opts.leader && GYM_DUELISTS[opts.leader]) {
     const id = opts.leader, first = !st.leadersBeaten[id], r = RIVALS[id];
-    Object.assign(reward, giveDrop(st, [...r.early.main, ...(r.early.extra || [])], idOf, random, first ? ROUTE_LEADERS[id].icon : null, Infinity));
+    Object.assign(reward, giveDrop(st, [...r.early.main, ...(r.early.extra || [])], idOf, random, first ? GYM_DUELISTS[id].icon : null, Infinity));
     st.leadersBeaten[id] = (st.leadersBeaten[id] || 0) + 1;
     if (first) {
-      st.locators.push(id);
+      // Solo el líder del gimnasio da Localizadora y las cartas clave de la etapa 2 (D-39, D-40).
+      if (GYM_LEADERS.has(id) && !st.locators.includes(id)) {
+        st.locators.push(id);
+        reward.notices.push(`Tarjeta Localizadora: ${st.locators.length} / 8`);
+        const keys = giveStarterKeys(st, 2, idOf);
+        if (keys.length) { reward.cards.push(...keys); reward.notices.push(`Cartas clave de tu baraja: ${STARTER_KEYS[st.starter][1].title}.`); }
+      }
       const pack = shopPacks(st).find((p) => p.id === id);
       const cards = openPack(pack, random).map(idOf);
       for (const card of cards) st.collection[card] = (st.collection[card] || 0) + 1;
       reward.cards.push(...cards);
-      reward.notices.push(`Tarjeta Localizadora: ${st.locators.length} / 8`, `Sobre de ${r.name} desbloqueado. ¡El primero es de regalo!`);
+      reward.notices.push(`Sobre de ${r.name} desbloqueado. ¡El primero es de regalo!`);
     }
   }
   if (opts.unlockFlag && !st.flags[opts.unlockFlag]) {

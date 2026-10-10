@@ -2,16 +2,18 @@ import { UI, el, esc } from "./ui.js";
 import { Input } from "../input.js";
 import { game, save } from "../state.js";
 import { miniCard, detailHtml } from "./menu.js";
-import { shopPacks, buyPack } from "../content/packs.js";
+import { shopPacks, buyPack, SHOPS } from "../content/packs.js";
+
+const RARITY_LABEL = { C: "Común", SP: "Común (escasa)", SSP: "Común (muy escasa)", R: "Rara", SR: "Súper rara", UR: "Ultra rara", ScR: "Secreta", "★": "★ Ícono", Mazo: "Del mazo", "Afín": "Afín" };
 import { ownedCopies } from "../duel/rewards.js";
 
-export function cardShop(ctx) {
+export function cardShop(ctx, shopId = "verde") {
   UI.lock();
   return new Promise((resolve) => {
-    const st = game.state, packs = shopPacks(st);
+    const st = game.state, packs = shopPacks(st, shopId);
     let selected = 0, opening = null, buying = false;
     const root = el("div", "screen card-shop");
-    root.innerHTML = `<div class="s-head"><span>Tienda de cartas</span><span class="shop-wallet"></span><button class="btn ghost shop-close">Salir</button></div>
+    root.innerHTML = `<div class="s-head"><span>${esc(SHOPS[shopId]?.name || "Tienda de cartas")}</span><span class="shop-wallet"></span><button class="btn ghost shop-close">Salir</button></div>
       <div class="s-body"><nav class="shop-packs" aria-label="Sobres"></nav><section class="shop-main"></section><aside class="shop-detail">Elegí una carta para leer su efecto.</aside></div>`;
     UI.root.appendChild(root);
     const list = root.querySelector(".shop-packs"), main = root.querySelector(".shop-main"), detail = root.querySelector(".shop-detail");
@@ -33,7 +35,7 @@ export function cardShop(ctx) {
       root.querySelector(".shop-wallet").textContent = `$${st.money}`;
       list.innerHTML = "";
       packs.forEach((p, i) => {
-        const button = el("button", "btn shop-pack" + (selected === i ? " on" : ""), `${esc(p.name)}<small>${p.unlocked ? "$" + p.price : "Ganale para desbloquear"}</small>`);
+        const button = el("button", "btn shop-pack" + (selected === i ? " on" : ""), `${esc(p.name)}<small>${p.unlocked ? "$" + p.price + (p.code ? " · " + p.code : "") : p.themed ? "Ganale para desbloquear" : esc(p.lockText)}</small>`);
         button.onclick = () => { selected = i; opening = null; detail.textContent = "Elegí una carta para leer su efecto."; draw(); };
         list.appendChild(button);
       });
@@ -47,14 +49,17 @@ export function cardShop(ctx) {
       }
       const pack = packs[selected];
       main.appendChild(el("h2", "", esc(pack.name)));
-      main.appendChild(el("p", "", pack.themed ? "9 cartas: 8 del mazo y 1 carta ícono. Pueden salir repetidas." : "9 cartas: 8 comunes y 1 rara o superior. Selección del set original; pueden salir repetidas."));
+      main.appendChild(el("p", "", pack.themed
+        ? "9 cartas: 8 entre su mazo y cartas afines de los sets clásicos, y 1 carta ícono. Pueden salir repetidas."
+        : "9 cartas: 8 comunes y 1 rara o mejor (Rara 72 %, Súper 17 %, Ultra 8 %, Secreta 3 %). Lista completa del set original; pueden salir repetidas."));
+      main.appendChild(el("p", "shop-short", "Algunas cartas muy poderosas no salen en los sobres hasta que juntes más Tarjetas Localizadoras."));
       const buy = el("button", "btn shop-buy", pack.unlocked ? `Comprar sobre · $${pack.price}` : "Sobre bloqueado");
       buy.disabled = !pack.unlocked || st.money < pack.price;
       buy.onclick = () => {
         if (buying) return;
         buying = true;
         try {
-          const result = buyPack(st, pack.id, ctx.idOf);
+          const result = buyPack(st, pack.id, ctx.idOf, Math.random, shopId);
           if (result.error) return UI.toast(result.error);
           opening = result.cards;
           if (!save()) UI.toast("Compra realizada. No se pudo guardar: mantené esta ventana abierta.");
@@ -64,7 +69,7 @@ export function cardShop(ctx) {
       main.appendChild(buy);
       if (pack.unlocked && st.money < pack.price) main.appendChild(el("p", "shop-short", `Te faltan $${pack.price - st.money}.`));
       main.appendChild(el("p", "", `Contenido posible: ${pack.cards.length} cartas`));
-      main.appendChild(cardGrid(pack.cards.map(([name, rarity]) => [ctx.idOf(name), rarity])));
+      main.appendChild(cardGrid(pack.cards.map(([name, rarity]) => [ctx.idOf(name), RARITY_LABEL[rarity] || rarity])));
     };
     const close = () => { off(); root.remove(); UI.unlock(); resolve(); };
     root.querySelector(".shop-close").onclick = close;
