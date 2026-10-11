@@ -21,7 +21,7 @@ export const Input = {
 
 export function setupInput() {
   window.addEventListener("keydown", (e) => {
-    const t = e.target; if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+    const t = e.target; if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT")) return;
     const b = KEYMAP[e.code]; if (!b) return; e.preventDefault();
     if (e.repeat && b !== "up" && b !== "down" && b !== "left" && b !== "right") return;
     Input.press(b);

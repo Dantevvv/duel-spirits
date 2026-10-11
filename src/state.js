@@ -27,6 +27,7 @@ export function newState() {
     leadersBeaten: {},        // líderes disponibles para revanchas y sobres
     locators: [],
     keyStage: 0,              // etapas de cartas clave de la inicial ya entregadas (D-40)
+    deckOverrides: {},        // mazos cambiados con el editor solo para esta partida (D-45, ver content/deckbook.js)
     stats: { wins: 0, losses: 0, steps: 0 },
     options: { ...DEFAULT_OPTIONS },
     playTime: 0,

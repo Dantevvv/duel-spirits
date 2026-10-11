@@ -6,9 +6,10 @@ import { TYPE, ATTRIBUTE_NAMES, RACE_NAMES } from "../duel/cards.js";
 import { cardClass, artUrl, hasArt } from "../duel/duelview.js";
 import { STARTERS } from "../content/decks.js";
 import { SPIRITS } from "../content/spirits.js";
+import { openDeckBuilder } from "./deckbuilder.js";
 
-let CARDS = null;
-export function setMenuCards(cards) { CARDS = cards; }
+let CARDS = null, CTX = null;
+export function setMenuCards(cards, ctx) { CARDS = cards; CTX = ctx; }
 
 function screen(title, cls = "") {
   UI.lock();
@@ -33,7 +34,7 @@ export function detailHtml(code) {
 
 // ---------------- Menú START ----------------
 export async function startMenu(api) {
-  const opts = ["Baraja", "Tarjeta", "Guardar", "Opciones", "Salir"];
+  const opts = ["Baraja", "Tarjeta", "Guardar", "Opciones", "Mazos (admin)", "Salir"];
   const has = game.state.flags.hasDeck;
   const list = has ? opts : opts.filter((o) => o !== "Baraja");
   const i = await UI.choose(list, { cls: "startmenu", cancel: true });
@@ -42,56 +43,12 @@ export async function startMenu(api) {
   else if (pick === "Tarjeta") await trainerCard();
   else if (pick === "Guardar") { const ok = save(); await UI.say(ok ? "{PLAYER} guardó la partida." : "No se pudo guardar (el navegador bloquea el almacenamiento)."); }
   else if (pick === "Opciones") await optionsMenu();
+  else if (pick === "Mazos (admin)") await openDeckBuilder(CTX, { mode: "admin", inGame: true });
 }
 
 // ---------------- Editor de baraja ----------------
-export function deckEditor() {
-  return new Promise((resolve) => {
-    const { s, body, closeBtn, close } = screen("Baraja", "deckedit");
-    const st = game.state;
-    body.innerHTML = `<div class="de-col"><div class="de-title">Tu baraja <span class="de-count"></span></div><div class="de-list deck"></div></div>
-      <div class="de-col"><div class="de-title">Colección <input class="tinput de-filter" placeholder="Buscar..."></div><div class="de-list coll"></div></div>
-      <div class="de-detail"><div class="d-empty">Tocá una carta: en la baraja la quita, en la colección la agrega.</div></div>`;
-    const deckEl = body.querySelector(".de-list.deck"), collEl = body.querySelector(".de-list.coll"), detail = body.querySelector(".de-detail");
-    const filter = body.querySelector(".de-filter"); filter.addEventListener("keydown", (e) => e.stopPropagation());
-    const countIn = (id) => st.deck.main.filter((x) => x === id).length + st.deck.extra.filter((x) => x === id).length;
-    const isExtra = (id) => CARDS.isExtra(id);
-    const sortKey = (id) => { const c = CARDS.get(id); return (c.type & TYPE.MONSTER ? 0 : c.type & TYPE.SPELL ? 1 : 2) * 1e6 + (9999 - (c.lv || 0)) * 100 + 0 + c.name.charCodeAt(0) / 1000; };
-    const group = (ids) => { const m = new Map(); for (const id of ids) m.set(id, (m.get(id) || 0) + 1); return [...m.entries()].sort((a, b) => sortKey(a[0]) - sortKey(b[0])); };
-    const draw = () => {
-      body.querySelector(".de-count").textContent = `${st.deck.main.length} + ${st.deck.extra.length} extra`;
-      body.querySelector(".de-count").classList.toggle("bad", st.deck.main.length < 40 || st.deck.main.length > 60);
-      deckEl.innerHTML = ""; collEl.innerHTML = "";
-      for (const [id, n] of group([...st.deck.main, ...st.deck.extra])) {
-        const row = el("div", "de-item"); row.appendChild(miniCard(id)); row.appendChild(el("span", "de-n", "×" + n));
-        row.onclick = () => { detail.innerHTML = detailHtml(id); const arr = isExtra(id) ? st.deck.extra : st.deck.main; const k = arr.indexOf(id); if (k >= 0) { arr.splice(k, 1); st.collection[id] = (st.collection[id] || 0) + 1; } draw(); };
-        row.onmouseenter = () => { detail.innerHTML = detailHtml(id); };
-        deckEl.appendChild(row);
-      }
-      const q = filter.value.toLowerCase();
-      const coll = Object.entries(st.collection).filter(([id, n]) => n > 0).map(([id, n]) => [Number(id), n]).filter(([id]) => !q || CARDS.nameHas(CARDS.get(id), q)).sort((a, b) => sortKey(a[0]) - sortKey(b[0]));
-      if (!coll.length) collEl.innerHTML = `<div class="d-empty">${q ? "Sin resultados." : "Todavía no tenés cartas extra. ¡Vencé espíritus en la hierba alta!"}</div>`;
-      for (const [id, n] of coll) {
-        const row = el("div", "de-item"); row.appendChild(miniCard(id)); row.appendChild(el("span", "de-n", "×" + n));
-        row.onclick = () => {
-          detail.innerHTML = detailHtml(id);
-          if (countIn(id) >= 3) return UI.toast("Máximo 3 copias por carta");
-          const arr = isExtra(id) ? st.deck.extra : st.deck.main;
-          if (!isExtra(id) && arr.length >= 60) return UI.toast("Máximo 60 cartas");
-          if (isExtra(id) && arr.length >= 15) return UI.toast("Máximo 15 en el Extra Deck");
-          arr.push(id); st.collection[id]--; if (!st.collection[id]) delete st.collection[id]; draw();
-        };
-        row.onmouseenter = () => { detail.innerHTML = detailHtml(id); };
-        collEl.appendChild(row);
-      }
-    };
-    filter.addEventListener("input", draw);
-    const tryClose = () => { if (st.deck.main.length < 40) return UI.toast("Tu baraja necesita al menos 40 cartas"); off(); close(); resolve(); };
-    closeBtn.onclick = tryClose;
-    const off = Input.push((b) => { if (b === "B" || b === "START") tryClose(); });
-    draw();
-  });
-}
+// La baraja del jugador usa el editor completo (ui/deckbuilder.js) limitado a su colección.
+export function deckEditor() { return openDeckBuilder(CTX, { mode: "player", inGame: true }); }
 
 // ---------------- Tarjeta de duelista ----------------
 export function trainerCard() {

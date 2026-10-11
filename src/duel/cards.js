@@ -1,5 +1,6 @@
 // Base de cartas en memoria (exportada desde BabelCDB por tools/export_cards.py).
 import { cardMatchesOpcode } from "../ocg/opcodes.js";
+import { profileCard } from "./profile.js";
 
 export const TYPE = { MONSTER: 0x1, SPELL: 0x2, TRAP: 0x4, NORMAL: 0x10, EFFECT: 0x20, FUSION: 0x40, RITUAL: 0x80, TRAPMONSTER: 0x100,
   SPIRIT: 0x200, UNION: 0x400, GEMINI: 0x800, TUNER: 0x1000, SYNCHRO: 0x2000, TOKEN: 0x4000, QUICKPLAY: 0x10000, CONTINUOUS: 0x20000,
@@ -10,11 +11,21 @@ export const RACE_NAMES = { 0x1: "Guerrero", 0x2: "Lanzador de Conjuros", 0x4: "
   0x8000: "Bestia-Guerrero", 0x10000: "Dinosaurio", 0x20000: "Pez", 0x40000: "Serpiente Marina", 0x80000: "Reptil", 0x100000: "Psíquico",
   0x200000: "Bestia Divina", 0x400000: "Dios Creador", 0x800000: "Wyrm", 0x1000000: "Ciberso" };
 
+const NO_PROFILE = Object.freeze({ a: 0, t: 0 });
+
 export class CardDB {
   /** @param {Record<string, any[]>} raw */
   constructor(raw) { this.raw = raw; this.cache = new Map(); this.es = null; this.lang = () => "en"; }
   /** Textos en español (data/cards.es.json: id -> [nombre, texto, frases?]) y de dónde leer el idioma elegido. */
   setSpanish(es, lang) { this.es = es; this.lang = lang; }
+  /** Perfiles precalculados (data/profiles.json: id -> perfil). Sin ellos, cada perfil se calcula al pedirlo. */
+  setProfiles(p) { this.profiles = p; this.profCache = new Map(); }
+  /** Qué hace la carta, para la IA (ver profile.js). */
+  profile(code) {
+    let p = (this.profCache ??= new Map()).get(code);
+    if (!p) { p = this.profiles ? (this.profiles[code] ?? NO_PROFILE) : profileCard(this.raw[code]); this.profCache.set(code, p); }
+    return p;
+  }
   get(code) {
     let c = this.cache.get(code); if (c) return c;
     const r = this.raw[code]; if (!r) return null;

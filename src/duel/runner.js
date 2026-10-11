@@ -11,6 +11,7 @@ export const isSelect = (m) => SELECT_TYPES.has(m.type);
 
 const POS_FACEDOWN_DEF = 0x8;
 const QUERY_FLAGS = 0x1 | 0x2 | 0x8 | 0x10 | 0x100 | 0x200; // código, posición, tipo, nivel, ATK, DEF
+const QUERY_SPELL = 0x1 | 0x2 | 0x8;                         // código, posición, tipo
 
 export class DuelRunner {
   /**
@@ -44,14 +45,28 @@ export class DuelRunner {
     this.duel.start();
   }
 
-  /** Vista del campo desde la perspectiva de "player", para la IA y la UI. */
+  /**
+   * Vista del campo desde la perspectiva de "player", para la IA. Solo información pública:
+   * de las cartas boca abajo del rival no se da ni el código ni los valores, y de su mano y su Deck, solo la cantidad.
+   */
   view(player) {
+    const codes = (p, loc) => this.duel.queryLocation(p, loc, 0x1 | 0x2).filter((q) => q && q.code && !(q.position & 0xa)).map((q) => q.code);
     const side = (p) => {
-      const mons = this.duel.queryLocation(p, L.MZONE, QUERY_FLAGS).map((q) => q && q.code ? {
-        code: q.code, atk: q.attack | 0, def: q.defense | 0, position: q.position, faceup: (q.position & 0x5) !== 0, attackPos: (q.position & 0x3) !== 0,
-      } : null);
-      const spells = this.duel.queryLocation(p, L.SZONE, 0x1 | 0x2).map((q) => q && q.position ? q : null);
-      return { monsters: mons, spellCount: spells.slice(0, 5).filter(Boolean).length, field: !!spells[5], hand: this.duel.count(p, L.HAND), lp: this.lp[p] };
+      const own = p === player;
+      const mons = this.duel.queryLocation(p, L.MZONE, QUERY_FLAGS).map((q, seq) => {
+        if (!q || !q.code) return null;
+        const faceup = (q.position & 0x5) !== 0, attackPos = (q.position & 0x3) !== 0;
+        if (!faceup && !own) return { code: 0, atk: 0, def: 0, level: 0, position: q.position, faceup, attackPos, seq };
+        return { code: q.code, atk: q.attack | 0, def: q.defense | 0, level: (q.level | 0) & 0xff, position: q.position, faceup, attackPos, seq };
+      });
+      const szone = this.duel.queryLocation(p, L.SZONE, QUERY_SPELL).map((q, seq) => {
+        if (!q || !q.position) return null;
+        const faceup = (q.position & 0x5) !== 0;
+        return { code: faceup || own ? q.code : 0, faceup, seq };
+      });
+      return { monsters: mons, spells: szone.slice(0, 5).filter(Boolean), spellCount: szone.slice(0, 5).filter(Boolean).length,
+        field: !!szone[5], fieldCode: szone[5]?.code || 0, hand: this.duel.count(p, L.HAND), deck: this.duel.count(p, L.DECK), lp: this.lp[p],
+        grave: codes(p, L.GRAVE), banished: codes(p, L.REMOVED), handCodes: own ? this.duel.queryLocation(p, L.HAND, 0x1).filter(Boolean).map((q) => q.code) : null };
     };
     return { turn: this.turn, phase: this.phase, me: side(player), opp: side(1 - player) };
   }

@@ -14,6 +14,8 @@ import { Sfx } from "./sfx.js";
 import { cardShop } from "./ui/shop.js";
 import { updateUntouchedStarter, migrateSave } from "./content/starter-update.js";
 import { giveStarterKeys } from "./duel/rewards.js";
+import { setPartidaLayer } from "./content/deckbook.js";
+import { openDeckBuilder } from "./ui/deckbuilder.js";
 
 const ctx = {};
 
@@ -21,27 +23,43 @@ async function loadAll(progress) {
   const get = async (url, kind = "json") => { const r = await fetch(url); if (!r.ok) throw new Error(`No se pudo cargar ${url} (${r.status})`); return kind === "json" ? r.json() : r.arrayBuffer(); };
   progress("Cargando cartas...");
   // Los textos en español son opcionales: si faltan, las cartas quedan en inglés.
-  const [cards, scripts, strings, wasm, cardsEs] = await Promise.all([get("data/cards.json"), get("data/scripts.json"), get("data/strings.json"), get("engine/ocgcore.wasm", "bin"), get("data/cards.es.json").catch(() => null)]);
+  const [cards, scripts, strings, wasm, cardsEs, profiles] = await Promise.all([get("data/cards.json"), get("data/scripts.json"), get("data/strings.json"), get("engine/ocgcore.wasm", "bin"), get("data/cards.es.json").catch(() => null),
+    get("data/profiles.json").catch(() => null)]); // perfiles para la IA: si faltan, se calculan al vuelo
   progress("Iniciando motor de duelos...");
   let core;
   try { core = await OcgCore.load(wasm); }
   catch (e) { throw new Error("Tu navegador no soporta el motor de duelos (WebAssembly con excepciones). Usá Chrome/Edge 137+, Firefox 131+ o Safari 18.4+. Detalle: " + e.message); }
   ctx.core = core; ctx.cards = new CardDB(cards); ctx.strings = strings; ctx.bundle = scripts; ctx.extraScripts = {};
   ctx.cards.setSpanish(cardsEs, () => game.state.options.cardLang);
+  if (profiles) ctx.cards.setProfiles(profiles);
   core.onLog = (t, m) => { if (t === 0) console.warn("[motor]", m); };
   // Nombre → id canónico (alias 0): una ilustración alternativa no es la carta del pool.
   ctx.byName = {}; for (const k in cards) { const n = cards[k][9]; if (!(n in ctx.byName) || cards[k][0] === 0) ctx.byName[n] = Number(k); }
   ctx.scripts = (name) => ctx.bundle[name] ?? ctx.extraScripts[name] ?? null;
-  // Scripts de cartas fuera del paquete: se piden a data/scripts/ antes de cada duelo (si existen)
+  // Scripts de cartas fuera del paquete (por ejemplo, cartas nuevas puestas con el editor de mazos, D-45):
+  // se piden antes de cada duelo a data/scripts/ y, si no están, a los scripts oficiales de Project Ignis.
+  const RAW = "https://raw.githubusercontent.com/ProjectIgnis/CardScripts/master/";
+  const fetchScript = async (n) => {
+    for (const url of ["data/scripts/" + n, RAW + "official/" + n, RAW + n]) {
+      try { const r = await fetch(url); if (r.ok) return await r.text(); } catch {}
+    }
+    return null;
+  };
   ctx.preload = async (ids) => {
     // Los monstruos normales y las fichas no tienen script
     const scripted = [...new Set(ids)].filter((id) => { const c = ctx.cards.get(id); return c && !((c.type & 0x10) && !(c.type & 0x20)) && !(c.type & 0x4000); });
-    const need = scripted.map((id) => `c${id}.lua`).filter((n) => !(n in ctx.bundle) && !(n in ctx.extraScripts));
-    await Promise.all(need.map(async (n) => { try { const r = await fetch("data/scripts/" + n); ctx.extraScripts[n] = r.ok ? await r.text() : null; } catch { ctx.extraScripts[n] = null; } }));
+    let need = scripted.map((id) => `c${id}.lua`);
+    while (need.length) {
+      need = [...new Set(need)].filter((n) => !(n in ctx.bundle) && !(n in ctx.extraScripts));
+      const got = await Promise.all(need.map(async (n) => (ctx.extraScripts[n] = await fetchScript(n))));
+      // Dependencias que piden los scripts bajados (otras cartas o utilidades)
+      need = got.filter(Boolean).flatMap((src) => [...src.matchAll(/Duel\.Load(?:Card)?Script\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1])
+        .concat([...src.matchAll(/Duel\.LoadCardScript\(\s*(\d+)\s*\)/g)].map((m) => `c${m[1]}.lua`)));
+    }
   };
   ctx.idOf = (name) => { const id = typeof name === "number" ? name : ctx.byName[name]; if (!id) throw new Error("Carta inexistente: " + name); return id; };
   ctx.idsOf = (list) => (list || []).flatMap(([n, q]) => Array(q).fill(ctx.idOf(n)));
-  setMenuCards(ctx.cards);
+  setMenuCards(ctx.cards, ctx);
   Sfx.loadFiles(); // sonidos propios opcionales en assets/sfx/
   // Arte local opcional (generado por tools/download_art.mjs)
   try { const r = await fetch("assets/cards/manifest.json"); if (r.ok) ART.available = new Set(await r.json()); } catch {}
@@ -128,7 +146,7 @@ function titleScreen() {
     const t = el("div", "title");
     const cont = hasSave();
     t.innerHTML = `<div class="t-logo"><div class="t-small">Proyecto fan</div><div class="t-big">DUEL SPIRITS</div><div class="t-sub">Ciudad Batalla</div></div>
-      <div class="t-menu">${cont ? '<button class="btn" data-a="cont">Continuar</button>' : ""}<button class="btn" data-a="new">Nueva partida</button></div>
+      <div class="t-menu">${cont ? '<button class="btn" data-a="cont">Continuar</button>' : ""}<button class="btn" data-a="new">Nueva partida</button><button class="btn t-admin" data-a="admin">Editor de mazos (admin)</button></div>
       <div class="t-help">Flechas: mover · Z/Enter: A · X/Shift: B (correr) · Esc/M: menú</div>`;
     UI.root.appendChild(t);
     const go = (a) => { off(); t.remove(); resolve(a); };
@@ -156,9 +174,11 @@ async function boot() {
   window.__game = { world, ctx, game }; // para depurar desde la consola
 
   const dev = new URLSearchParams(location.search).get("dev");
-  const choice = dev ? "dev" : await titleScreen();
+  let choice = dev ? "dev" : await titleScreen();
+  // Editor de mazos desde el título (D-45): al cerrarlo se vuelve al título.
+  while (choice === "admin") { await openDeckBuilder(ctx, { mode: "admin", inGame: false }); choice = await titleScreen(); }
   if (choice === "dev") {
-    wipe(); const st = game.state; st.player = "Ren"; st.rival = "Leo";
+    wipe(); setPartidaLayer({}); const st = game.state; st.player = "Ren"; st.rival = "Leo";
     if (dev === "shop") { st.flags.canChoose = true; world.loadMap("shop", 7, 4, "up"); }
     else {
       // ?dev=town | route1 | verde | gym | yugi. &starter=gigobyte|timewizard cambia la inicial (por defecto Kuriboh).
@@ -172,10 +192,11 @@ async function boot() {
     }
   } else if (choice === "cont" && load()) {
     migrateSave(game.state);
+    setPartidaLayer(game.state.deckOverrides);
     if (updateUntouchedStarter(game.state, ctx.idsOf, ctx.idOf)) { save(); UI.toast("Tu mazo inicial recibió el ajuste de balance."); }
     world.loadMap(game.state.map, game.state.x, game.state.y, game.state.dir);
   } else {
-    wipe();
+    wipe(); setPartidaLayer({});
     world.paused = true;
     await SCRIPTS.intro(world.api);
     world.loadMap("house2f", 4, 3, "down");

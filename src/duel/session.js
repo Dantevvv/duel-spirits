@@ -38,7 +38,7 @@ export async function runDuel(ctx, opts) {
   rivalCtl.ai = true; rivalCtl.setView = (f) => ai.setView(f); rivalCtl.observe = (m) => ai.observe(m);
   const controllers = []; controllers[me] = (m, r, again) => view.respond(m, again); controllers[1 - me] = rivalCtl;
   // Modo de prueba: ?autoduel en la URL hace que la IA juegue por vos (para testear flujos)
-  if (/[?&]autoduel/.test(location.search)) { const auto = new DuelAI({ cards: ctx.cards, skill: 0.9 }); controllers[me] = auto; }
+  if (/[?&]autoduel/.test(location.search) || opts.autoPlayer) { const auto = new DuelAI({ cards: ctx.cards, skill: 0.9 }); controllers[me] = auto; }
   const runner = new DuelRunner({ core: ctx.core, cards: ctx.cards, scripts: ctx.scripts, decks, lp, controllers, fallback: new DuelAI({ cards: ctx.cards }),
     onMessage: (m, r, silent) => view.onMessage(m, silent) });
   view.runner = runner;
